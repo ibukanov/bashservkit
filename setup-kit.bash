@@ -78,11 +78,11 @@ generate_password() {
     dd if=/dev/urandom bs=1 count=12 status=none | base64 | sed -e 's/[+/]//'
 }
 
-exec_gpg() {
+run_gpg() {
     [[ -e $backup_password ]] || err "$backup_password does not exist"
     [[ -s $backup_password ]] || err "$backup_password must be non-empty file"
     mkdir -p -m 700 /tmp/gnupg
-    exec gpg --homedir=/tmp/gnupg --passphrase-file="$backup_password" --batch -q "$@"
+    gpg --homedir=/tmp/gnupg --passphrase-file="$backup_password" --batch -q "$@"
 }
 
 # -m specifies the mode for decrypted file, the encrypted file
@@ -116,7 +116,7 @@ ensure_encrypt_decrypt() {
 
 	log "encrypting $decrypted into $encrypted"
 	tmp_files+=("$encrypted.tmp")
-	exec_gpg --cipher-algo AES256 --symmetric < "$decrypted" > "$encrypted.tmp" || \
+	run_gpg --cipher-algo AES256 --symmetric < "$decrypted" > "$encrypted.tmp" || \
 	    err "Failed to encrypt $decrypted into $encrypted"
 	mv -fT "$encrypted.tmp" "$encrypted"
     fi
@@ -124,17 +124,25 @@ ensure_encrypt_decrypt() {
     if [[ ! -s "$decrypted" ]]; then
 	log "decrypting $encrypted into $decrypted"
 	tmp_files+=("$decrypted.tmp")
-	exec_gpg -d < "$encrypted" > "$decrypted.tmp" || \
+	run_gpg -d < "$encrypted" > "$decrypted.tmp" || \
 	    err "Failed to decrypt $encrypted into $decrypted"
 	mv -fT "$decrypted.tmp" "$decrypted"
     fi
 
-    body1=$(base64 -w0 $decrypted)
-    body2=$(exec_gpg -d < $encrypted | base64 -w0)
+    body1=$(base64 -w0 "$decrypted")
+    body2=$(run_gpg -d < $encrypted | base64 -w0)
     test "_$body1" = "_$body2" || \
 	err "FAIL: $decrypted and its encrypted form $encrypted differ." \
 	    "If $decrypted was updated with new content," \
 	    "remove $encrypted and run again."
+}
+
+is_same_file_content() {
+    local path1="$1" path2="$2"
+    if cmp --silent "$path1" "$path2"; then
+	return 0
+    fi
+    return 1
 }
 
 readonly VOLUME_LIST_SPAN=5
